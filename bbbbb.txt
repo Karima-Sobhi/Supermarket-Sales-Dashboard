@@ -1,0 +1,575 @@
+# List of packages to check and install if needed
+packages_to_install <- c("shiny", "ggplot2", "dplyr","plotly","reshape2","corrplot")
+
+# Check and install packages if needed
+for (package in packages_to_install) {
+  if (!require(package, character.only = TRUE)) {
+    install.packages(package)
+  }
+}
+
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(reshape2)
+library(corrplot)
+
+# reading our data
+data <- read.csv("supermarket_sales - Sheet1.csv")
+# ==========================[1] DATA PREPROCESSING:=====================================
+
+# Check if there are any duplicated rows
+anyDuplicated(data)
+# extract column month from the Date column
+data$Month <- format(as.Date(data$Date, format = "%m/%d/%y"), "%b")
+# Drop specified columns
+data <- data %>%
+  select(-Invoice.ID, -Time, -cogs, -gross.margin.percentage)
+
+# View unique values in 'Branch' and 'Customer type'
+unique_branch <- unique(data$Branch)
+unique_customer_type <- unique(data$Customer.type)
+unique_gender <- unique(data$Gender)
+# Print unique values
+cat("Unique values in 'Branch':", unique_branch, "\n")
+cat("Unique values in 'Customer type':", unique_customer_type, "\n")
+cat("Unique values in 'Gender':", unique_gender, "\n")
+
+# Summary statistics for numeric columns
+summary(data)
+
+# check nulls
+any(is.na(data))
+# get columns info
+str(data)
+
+# Display the first few rows of the data
+head(data)
+
+# ===========================SHINY APP=================================================
+# Define UI for application that draws a histogram
+ui <- fluidPage(
+  # Application title
+  titlePanel("Supermarket Sales Dataset Explorer"),
+  # Sidebar with a slider input for number of bins 
+  
+  # Sidebar with a slider input for number of bins
+  sidebarLayout(
+    sidebarPanel(
+      # Dropdown menu for selecting specific category
+      selectInput("categoryDropdown", "Select Category", choices = c("Product Line", "Gender", "Branch","payment","customerType","Rating","Unit.price","Quantity","Tax.5.", "Total","gross.income")),
+      
+      # Checkboxes to choose between different categories for comparison
+      checkboxGroupInput("compareCheckbox", "Select Categories for Comparison", choices = c("Product Line", "Gender", "Branch","payment","customerType","Rating","Unit.price","Quantity","Tax.5.", "Total","gross.income")),
+      
+      # Date range selectors for focusing on specific time periods
+      dateRangeInput("dateRange", "Select Date Range", start = "2019-01-01", end = "2019-03-31"),
+      
+      # Radio buttons for choosing between daily and cumulative data
+      radioButtons("dataMode", "Select Data Mode", choices = c("Daily", "Cumulative"), selected = "Daily"),
+      
+      # Checkboxes to dynamically show/hide different visualizations
+      checkboxGroupInput("visualizationCheckbox", "Select Visualizations to Display", choices = c( "Scatter Plot", "Histogram", "Line Chart", "Heatmap", "Scatter Total Gender Plot", "Combined Plot"))
+    ),
+    
+    
+  # Main panel with plots
+  mainPanel(
+    fluidRow(
+      column(6, plotOutput("productLinePieChart")), 
+      column(6, plotOutput("genderPlot")),
+      column(6, plotOutput("branchPlot")),
+      column(6, plotOutput("paymentPlot")),
+      column(6, plotOutput("customerTypePlot")), 
+      column(6, plotOutput("ratingBoxPlot")),
+      column(6, plotOutput("UnitpriceBoxPlot")),
+      column(6, plotOutput("QuantityBoxPlot")),
+      column(6, plotOutput("Tax.5.BoxPlot")),
+      column(6, plotOutput("TotalBoxPlot")),
+      column(6, plotOutput("grossincomeBoxPlot")),
+      column(6, plotOutput("scatterPlot")),
+      column(6, plotOutput("histogram")),
+      column(8, plotlyOutput("dateLineChart")),
+      column(8, plotOutput("heatmap")),
+      column(6, plotOutput("scatterTotalGenderPlot")),
+      column(12, plotOutput("combinedPlot", height = 400))
+    
+    )
+  ))
+)
+
+# Define server logic required to draw the plots
+server <- function(input, output) {
+ 
+# ===========================[1] BIE CHART========================================= 
+  output$genderPlot <- renderPlot({
+    # Calculate gender percentages
+    gender_percentages <- table(data$Gender) / nrow(data) * 100
+    
+    # Create a data frame for plotting
+    gender_data <- data.frame(Gender = names(gender_percentages), Percentage = as.numeric(gender_percentages))
+    
+    # Create a pie chart with percentages
+    ggplot(gender_data, aes(x = "", y = Percentage, fill = Gender)) +
+      geom_bar(width = 1, stat = "identity", color = "white") +
+      coord_polar(theta = "y") +
+      labs(title = "Distribution of Gender") +
+      geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+  })
+  
+  output$branchPlot <- renderPlot({
+    # Calculate branch percentages
+    branch_percentages <- table(data$Branch) / nrow(data) * 100
+    
+    # Create a data frame for plotting
+    branch_data <- data.frame(Branch = names(branch_percentages), Percentage = as.numeric(branch_percentages))
+    
+    # Create a pie chart with percentages
+    ggplot(branch_data, aes(x = "", y = Percentage, fill = Branch)) +
+      geom_bar(width = 1, stat = "identity", color = "white") +
+      coord_polar(theta = "y") +
+      labs(title = "Distribution of Branches") +
+      geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+  })
+  
+  output$paymentPlot <- renderPlot({
+    # Calculate payment percentages
+    payment_percentages <- table(data$Payment) / nrow(data) * 100
+    
+    # Create a data frame for plotting
+    payment_data <- data.frame(Payment = names(payment_percentages), Percentage = as.numeric(payment_percentages))
+    
+    # Create a pie chart with percentages
+    ggplot(payment_data, aes(x = "", y = Percentage, fill = Payment)) +
+      geom_bar(width = 1, stat = "identity", color = "white") +
+      coord_polar(theta = "y") +
+      labs(title = "Distribution of Payment Methods") +
+      geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+  })
+  
+  # Pie chart for Product Line
+  output$productLinePieChart <- renderPlot({
+    product_line_percentages <- table(data$Product.line) / nrow(data) * 100
+    
+    product_line_data <- data.frame(Product.line = names(product_line_percentages), Percentage = as.numeric(product_line_percentages))
+    
+    ggplot(product_line_data, aes(x = "", y = Percentage, fill = Product.line)) +
+      geom_bar(width = 1, stat = "identity", color = "white") +
+      coord_polar(theta = "y") +
+      labs(title = "Distribution of Product Line") +
+      geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+  })
+  output$customerTypePlot <- renderPlot({
+    # Calculate Customer.type percentages
+    customer_type_percentages <- table(data$Customer.type) / nrow(data) * 100
+    
+    # Create a data frame for plotting
+    customer_type_data <- data.frame(CustomerType = names(customer_type_percentages), Percentage = as.numeric(customer_type_percentages))
+    
+    # Create a pie chart with percentages
+    ggplot(customer_type_data, aes(x = "", y = Percentage, fill = CustomerType)) +
+      geom_bar(width = 1, stat = "identity", color = "white") +
+      coord_polar(theta = "y") +
+      labs(title = "Distribution of Customer Type") +
+      geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+  })
+  
+# ===========================[2] BAR CHART=========================================
+  output$combinedPlot <- renderPlot({
+    
+    # Create a data frame for plotting
+    plot_data <- data %>% 
+      group_by(`Product.line`, Month) %>%
+      summarise(Count = n())
+    
+    # Create a bar chart
+    ggplot(plot_data, aes(x = `Product.line`, y = Count, fill = Month)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      labs(title = "Product Line and Monthly Distribution") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10)) +
+      geom_text(aes(label = Count), position = position_dodge(width = 1), vjust = -0.5, size = 4)
+  })
+  
+  
+# ===========================[3] BOX PLOT =========================================
+  
+  # Box plot for Rating column with numbers
+  output$ratingBoxPlot <- renderPlot({
+    ggplot(data, aes(x = "", y = Rating)) +
+      geom_boxplot(fill = "lightblue") +
+      labs(title = "Box Plot of Rating")
+  })
+  # Box plot for Unit.price column with numbers
+  output$UnitpriceBoxPlot <- renderPlot({
+    ggplot(data, aes(x = "", y = Unit.price )) +
+      geom_boxplot(fill = "lightblue") +
+      labs(title = "Box Plot of Unit price ")
+  })
+  # Box plot for Quantity column with numbers
+  output$QuantityBoxPlot <- renderPlot({
+    ggplot(data, aes(x = "", y = Quantity )) +
+      geom_boxplot(fill = "lightblue") +
+      labs(title = "Box Plot of Quantity ")
+  })
+  # Box plot for Tax.5. column with numbers
+  output$Tax.5.BoxPlot <- renderPlot({
+    ggplot(data, aes(x = "", y = Tax.5.)) +
+      geom_boxplot(fill = "lightblue") +
+      labs(title = "Box Plot of Tax.5.")
+  })
+  # Box plot for Total column with numbers
+  output$TotalBoxPlot <- renderPlot({
+    ggplot(data, aes(x = "", y =  Total)) +
+      geom_boxplot(fill = "lightblue") +
+      labs(title = "Box Plot of  Total")
+  })
+  # Box plot for gross.income column with numbers
+  output$grossincomeBoxPlot <- renderPlot({
+    ggplot(data, aes(x = "", y =  gross.income)) +
+      geom_boxplot(fill = "lightblue") +
+      labs(title = "Box Plot of  gross.income")
+  })
+# ===========================[4] SCATTER PLOT =========================================
+  
+  # Scatter plot for Rating and Gross.income
+  output$scatterPlot <- renderPlot({
+    ggplot(data, aes(x = Rating, y = gross.income)) +
+      geom_point() +
+      labs(title = "Scatter Plot of Rating and Gross Income")
+  })
+  # Add this new output function
+  output$scatterTotalGenderPlot <- renderPlot({
+    # Scatter plot for Total and Gender with colors and bigger size
+    ggplot(data, aes(x = Gender, y = Total, color = Gender)) +
+      geom_point(size = 3) +  # Adjust the size as needed
+      labs(title = "Scatter Plot of Total Sales and Gender") +
+      scale_color_manual(values = c("Male" = "blue", "Female" = "pink"))  # Adjust colors as needed
+  })
+  
+  # as we see there is no relationship
+# ===========================[5] HISTOGRAM PLOT =========================================
+  
+  
+  # # Histogram for Rating
+
+  output$histogram <- renderPlot({
+
+    # Assuming 'data' is your data frame
+    ggplot(data, aes(x = Rating)) +
+      geom_histogram(binwidth = 1, fill = "skyblue", color = "black", alpha = 0.7) +
+      labs(title = "Histogram of Rating", x = "Rating", y = "Count") +
+      theme_minimal()
+    
+  })
+  
+  
+# ===========================[6] LINE CHART =========================================
+  
+  # Line chart for Date & gross.income columns
+  output$dateLineChart <- renderPlotly({
+    data %>%
+      filter(!is.na(Date)) %>%
+      group_by(Date) %>%
+      summarise(gross_income = sum(gross.income)) %>%
+      plot_ly(x = ~Date, y = ~gross_income, type = "scatter", mode = "lines") %>%
+      layout(title = "Total gross income Over Time", xaxis = list(title = "Date"), yaxis = list(title = "Total gross income"))
+  })
+
+# ===========================[7] HEAT MAP =========================================
+
+  # # Add this to your existing server function
+  output$heatmap <- renderPlot({
+    numeric_data <- data %>%
+      select(Unit.price, Quantity, Tax.5., Total, gross.income, Rating)
+    
+    # Calculate the correlation matrix
+    correlation_matrix <- cor(numeric_data)
+    
+    # Plot the heatmap
+    corrplot(correlation_matrix, method = "number", col = colorRampPalette(c("black", "red"))(20),
+             addCoef.col = "white", number.cex = 0.7, tl.cex = 0.7,
+             title = "Correlation Heatmap of Numeric Columns")
+  })
+  
+  # ===========================[8] handler drop down menu =========================================
+  # Dropdown menu selection handler
+  observe ({
+    # Use input$categoryDropdown to determine the selected category
+    selected_category <- input$categoryDropdown
+    
+    # Reset all output elements initially to NULL to hide them
+    output$productLinePieChart <- renderPlot(NULL)
+    output$genderPlot <- renderPlot(NULL)
+    output$branchPlot <- renderPlot(NULL)
+    output$paymentPlot <- renderPlot(NULL)
+    output$customerTypePlot <- renderPlot(NULL)
+    # Perform actions or generate plots based on the selected category
+    # Example: Switch case for selected category
+    switch(selected_category,
+           "Product Line" = {
+             # Code for handling Product Line selection
+             # For example, update a specific plot based on this selection
+             # Pie chart for Product Line
+             output$productLinePieChart <- renderPlot({
+               product_line_percentages <- table(data$Product.line) / nrow(data) * 100
+               
+               product_line_data <- data.frame(Product.line = names(product_line_percentages), Percentage = as.numeric(product_line_percentages))
+               
+               ggplot(product_line_data, aes(x = "", y = Percentage, fill = Product.line)) +
+                 geom_bar(width = 1, stat = "identity", color = "white") +
+                 coord_polar(theta = "y") +
+                 labs(title = "Distribution of Product Line") +
+                 geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+             })
+           },
+           "Gender" = {
+             # Code for handling Gender selection
+             # Update the Gender plot
+             output$genderPlot <- renderPlot({
+               # Calculate gender percentages
+               gender_percentages <- table(data$Gender) / nrow(data) * 100
+               
+               # Create a data frame for plotting
+               gender_data <- data.frame(Gender = names(gender_percentages), Percentage = as.numeric(gender_percentages))
+               
+               # Create a pie chart with percentages
+               ggplot(gender_data, aes(x = "", y = Percentage, fill = Gender)) +
+                 geom_bar(width = 1, stat = "identity", color = "white") +
+                 coord_polar(theta = "y") +
+                 labs(title = "Distribution of Gender") +
+                 geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+             })
+           },
+           "Branch" = {
+             # Code for handling Branch selection
+             # Update the Branch plot
+             output$branchPlot <- renderPlot({
+               # Calculate branch percentages
+               branch_percentages <- table(data$Branch) / nrow(data) * 100
+               
+               # Create a data frame for plotting
+               branch_data <- data.frame(Branch = names(branch_percentages), Percentage = as.numeric(branch_percentages))
+               
+               # Create a pie chart with percentages
+               ggplot(branch_data, aes(x = "", y = Percentage, fill = Branch)) +
+                 geom_bar(width = 1, stat = "identity", color = "white") +
+                 coord_polar(theta = "y") +
+                 labs(title = "Distribution of Branches") +
+                 geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+             })
+           },
+           "payment" = {
+             output$paymentPlot <- renderPlot({
+               # Calculate payment percentages
+               payment_percentages <- table(data$Payment) / nrow(data) * 100
+               
+               # Create a data frame for plotting
+               payment_data <- data.frame(Payment = names(payment_percentages), Percentage = as.numeric(payment_percentages))
+               
+               # Create a pie chart with percentages
+               ggplot(payment_data, aes(x = "", y = Percentage, fill = Payment)) +
+                 geom_bar(width = 1, stat = "identity", color = "white") +
+                 coord_polar(theta = "y") +
+                 labs(title = "Distribution of Payment Methods") +
+                 geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+             })
+        },
+        "customerType" = {
+          output$customerTypePlot <- renderPlot({
+            # Calculate Customer.type percentages
+            customer_type_percentages <- table(data$Customer.type) / nrow(data) * 100
+            
+            # Create a data frame for plotting
+            customer_type_data <- data.frame(CustomerType = names(customer_type_percentages), Percentage = as.numeric(customer_type_percentages))
+            
+            # Create a pie chart with percentages
+            ggplot(customer_type_data, aes(x = "", y = Percentage, fill = CustomerType)) +
+              geom_bar(width = 1, stat = "identity", color = "white") +
+              coord_polar(theta = "y") +
+              labs(title = "Distribution of Customer Type") +
+              geom_text(aes(label = paste0(round(Percentage, 1), "%")), position = position_stack(vjust = 0.5))
+          })
+        }
+    )
+  })
+# ===========================[9] handler CheckBox =========================================
+    observe({
+      selected_comparison_categories <- input$compareCheckbox
+      
+      # Your code to handle the selected comparison categories
+      # For example, you might want to create comparison plots here based on the selected categories
+      # Reset all output elements initially to NULL to hide them
+      output$ratingBoxPlot <- renderPlot(NULL)
+      output$UnitpriceBoxPlot <- renderPlot(NULL)
+      output$QuantityBoxPlot <- renderPlot(NULL)
+      output$Tax.5.BoxPlot <- renderPlot(NULL)
+      output$TotalBoxPlot <- renderPlot(NULL)
+      output$grossincomeBoxPlot <- renderPlot(NULL)
+      if ("Rating" %in% selected_comparison_categories) {
+          output$ratingBoxPlot <- renderPlot({
+            ggplot(data, aes(x = "", y = Rating)) +
+              geom_boxplot(fill = "lightblue") +
+              labs(title = "Box Plot of Rating")
+          })
+      }
+      if ("Unit.price" %in% selected_comparison_categories) {
+          # Box plot for Unit.price column with numbers
+          output$UnitpriceBoxPlot <- renderPlot({
+            ggplot(data, aes(x = "", y = Unit.price )) +
+              geom_boxplot(fill = "lightblue") +
+              labs(title = "Box Plot of Unit price ")
+          })
+      }
+      if ("Quantity" %in% selected_comparison_categories) {
+          output$QuantityBoxPlot <- renderPlot({
+            ggplot(data, aes(x = "", y = Quantity )) +
+              geom_boxplot(fill = "lightblue") +
+              labs(title = "Box Plot of Quantity ")
+          })
+      }
+      if ( "Tax.5." %in% selected_comparison_categories) {
+          # Box plot for Tax.5. column with numbers
+          output$Tax.5.BoxPlot <- renderPlot({
+            ggplot(data, aes(x = "", y = Tax.5.)) +
+              geom_boxplot(fill = "lightblue") +
+              labs(title = "Box Plot of Tax.5.")
+          })
+      }
+      if ("Total" %in% selected_comparison_categories) {
+          output$TotalBoxPlot <- renderPlot({
+            ggplot(data, aes(x = "", y =  Total)) +
+              geom_boxplot(fill = "lightblue") +
+              labs(title = "Box Plot of  Total")
+          })
+      }
+      if ("gross.income" %in% selected_comparison_categories) {
+          output$grossincomeBoxPlot <- renderPlot({
+            ggplot(data, aes(x = "", y =  gross.income)) +
+              geom_boxplot(fill = "lightblue") +
+              labs(title = "Box Plot of  gross.income")
+          })
+      }
+     
+    })
+# ===========================[10] handler selectedDataRange =========================================
+    observe({
+      selected_date_range <- input$dateRange
+      
+      # Extract start and end dates from the selected range
+      start_date <- selected_date_range[1]
+      end_date <- selected_date_range[2]
+      
+      # Use start_date and end_date in your logic, e.g., filtering data based on the selected date range
+      
+      filtered_data <- data %>%
+        filter(Date >= start_date & Date <= end_date)
+      
+      # Update plots or perform actions using the filtered data
+      
+    })
+# ===========================[11] handler selected_data_mode=========================================
+    observe({
+      selected_data_mode <- input$dataMode
+      
+      # Your code to handle the selected data mode
+      # For example, you might want to update plots based on the selected mode
+      
+      if (selected_data_mode == "Daily") {
+        # Code to display or update plots based on daily data
+      } else if (selected_data_mode == "Cumulative") {
+        # Code to display or update plots based on cumulative data
+      }
+    })
+# ===========================[12] handler selected_visualizations =========================================
+    observe({
+      selected_visualizations <- input$visualizationCheckbox
+      
+      # Reset the UI to remove existing visualizations
+      lapply(c("scatterPlot", "histogram", "dateLineChart", "heatmap", "scatterTotalGenderPlot", "combinedPlot"), function(p) {
+        output[[p]] <- renderPlot(NULL)
+      })
+      output$scatterPlot <- renderPlot(NULL)
+      output$histogram <- renderPlot(NULL)
+      output$dateLineChart <- renderPlot(NULL)
+      output$heatmap <- renderPlot(NULL)
+      output$scatterTotalGenderPlot <- renderPlot(NULL)
+      output$combinedPlot <- renderPlot(NULL)
+      
+      # Render selected visualizations based on checkboxes
+      if ("Scatter Plot" %in% selected_visualizations) {
+        # Add this new output function
+        output$scatterPlot <- renderPlot({
+          ggplot(data, aes(x = Rating, y = gross.income)) +
+            geom_point() +
+            labs(title = "Scatter Plot of Rating and Gross Income")
+        })
+      }
+      if ("Histogram" %in% selected_visualizations) {
+        output$histogram <- renderPlot({
+          
+          ggplot(data, aes(x = Rating)) +
+            geom_histogram(binwidth = 1, fill = "skyblue", color = "black", alpha = 0.7) +
+            labs(title = "Histogram of Rating", x = "Rating", y = "Count") +
+            theme_minimal()
+          
+        })
+      }
+      if ("Line Chart" %in% selected_visualizations) {
+        # Line chart for Date & gross.income columns
+        output$dateLineChart <- renderPlotly({
+          data %>%
+            filter(!is.na(Date)) %>%
+            group_by(Date) %>%
+            summarise(gross_income = sum(gross.income)) %>%
+            plot_ly(x = ~Date, y = ~gross_income, type = "scatter", mode = "lines") %>%
+            layout(title = "Total gross income Over Time", xaxis = list(title = "Date"), yaxis = list(title = "Total gross income"))
+        })
+      }
+      if ("Heatmap" %in% selected_visualizations) {
+        output$heatmap <- renderPlot({
+          numeric_data <- data %>%
+            select(Unit.price, Quantity, Tax.5., Total, gross.income, Rating)
+          
+          # Calculate the correlation matrix
+          correlation_matrix <- cor(numeric_data)
+          
+          # Plot the heatmap
+          corrplot(correlation_matrix, method = "number", col = colorRampPalette(c("black", "red"))(20),
+                   addCoef.col = "white", number.cex = 0.7, tl.cex = 0.7,
+                   title = "Correlation Heatmap of Numeric Columns")
+        })
+      }
+      if ("Scatter Total Gender Plot" %in% selected_visualizations) {
+        output$scatterTotalGenderPlot <- renderPlot({
+          # Scatter plot for Total and Gender with colors and bigger size
+          ggplot(data, aes(x = Gender, y = Total, color = Gender)) +
+            geom_point(size = 3) +  # Adjust the size as needed
+            labs(title = "Scatter Plot of Total Sales and Gender") +
+            scale_color_manual(values = c("Male" = "blue", "Female" = "pink"))  # Adjust colors as needed
+        })
+      }
+      if ("Combined Plot" %in% selected_visualizations) {
+         output$combinedPlot <- renderPlot({
+    
+    # Create a data frame for plotting
+    plot_data <- data %>% 
+      group_by(`Product.line`, Month) %>%
+      summarise(Count = n())
+    
+    # Create a bar chart
+    ggplot(plot_data, aes(x = `Product.line`, y = Count, fill = Month)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      labs(title = "Product Line and Monthly Distribution") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10)) +
+      geom_text(aes(label = Count), position = position_dodge(width = 1), vjust = -0.5, size = 4)
+  })
+  
+      }
+    })
+ 
+
+# Run the application 
+shinyApp(ui = ui, server = server )
